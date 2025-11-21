@@ -21,11 +21,11 @@ let beatIntervals = [];
 let threshold = 550;
 
 // Sensor mode controls
-let tempMode = 'auto';  // auto, normal, elevated, fever
-let ppgMode = 'auto';   // auto, resting, elevated, tachycardia
-let accelMode = 'auto'; // auto, rest, walking, running
+let tempMode = 'auto';
+let ppgMode = 'auto';
+let accelMode = 'auto';
 
-// Simulated temperature for auto mode (not live sensor)
+// Simulated temperature for auto mode
 let autoTempValue = 101.5;
 let lastTempUpdate = 0;
 
@@ -39,7 +39,7 @@ let accelCanvas, accelCtx;
 let accelData = {x: [], y: [], z: []};
 const ACCEL_MAX_POINTS = 50;
 
-// Health ranges based on breed/size/activity
+// Health ranges
 let healthRanges = {
     tempRest: { min: 101.0, max: 102.5 },
     tempActive: { min: 102.0, max: 103.5 },
@@ -63,6 +63,8 @@ const breedData = {
  * Initialize the application
  */
 function initializeApp() {
+    console.log('Initializing application...');
+    
     // Check if Web Bluetooth is available
     if (!navigator.bluetooth) {
         alert('Web Bluetooth API is not available in this browser. Please use Chrome, Edge, or Opera.');
@@ -72,8 +74,10 @@ function initializeApp() {
     // Initialize health ranges
     updateHealthRanges();
     
-    // Initialize graphs
-    initializeGraphs();
+    // Initialize graphs with a small delay to ensure DOM is ready
+    setTimeout(() => {
+        initializeGraphs();
+    }, 100);
     
     // Start auto temperature simulation
     setInterval(updateAutoTemperature, 1000);
@@ -85,17 +89,29 @@ function initializeApp() {
  * Initialize canvas graphs
  */
 function initializeGraphs() {
+    console.log('Initializing graphs...');
+    
     // PPG Graph
     ppgCanvas = document.getElementById('ppgCanvas');
-    ppgCtx = ppgCanvas.getContext('2d');
-    ppgCtx.fillStyle = '#f8f8f8';
-    ppgCtx.fillRect(0, 0, ppgCanvas.width, ppgCanvas.height);
+    if (ppgCanvas) {
+        ppgCtx = ppgCanvas.getContext('2d');
+        ppgCtx.fillStyle = '#f8f8f8';
+        ppgCtx.fillRect(0, 0, ppgCanvas.width, ppgCanvas.height);
+        console.log('PPG canvas initialized');
+    } else {
+        console.error('PPG canvas not found!');
+    }
     
     // Accelerometer Graph
     accelCanvas = document.getElementById('accelCanvas');
-    accelCtx = accelCanvas.getContext('2d');
-    accelCtx.fillStyle = '#f8f8f8';
-    accelCtx.fillRect(0, 0, accelCanvas.width, accelCanvas.height);
+    if (accelCanvas) {
+        accelCtx = accelCanvas.getContext('2d');
+        accelCtx.fillStyle = '#f8f8f8';
+        accelCtx.fillRect(0, 0, accelCanvas.width, accelCanvas.height);
+        console.log('Accel canvas initialized');
+    } else {
+        console.error('Accel canvas not found!');
+    }
 }
 
 /**
@@ -105,17 +121,14 @@ function updateAutoTemperature() {
     if (tempMode !== 'auto') return;
     
     const now = Date.now();
-    if (now - lastTempUpdate < 2000) return; // Update every 2 seconds
+    if (now - lastTempUpdate < 2000) return;
     
-    // Add small random variation
-    const variation = (Math.random() - 0.5) * 0.2; // ±0.1 degrees
+    const variation = (Math.random() - 0.5) * 0.2;
     autoTempValue += variation;
     
-    // Keep in realistic range
     if (autoTempValue < 100.5) autoTempValue = 100.5;
     if (autoTempValue > 103.5) autoTempValue = 103.5;
     
-    // Update display
     updateTemperatureDisplay(autoTempValue);
     lastTempUpdate = now;
 }
@@ -142,13 +155,11 @@ function updateTemperatureDisplay(avgTemp) {
 function setTempMode(mode) {
     tempMode = mode;
     
-    // Update button states
     document.querySelectorAll('.sensor-card:nth-child(1) .btn-sensor-demo').forEach(btn => {
         btn.classList.remove('active');
     });
     event.target.classList.add('active');
     
-    // Update indicator
     const indicator = document.getElementById('tempModeIndicator');
     
     switch(mode) {
@@ -176,20 +187,21 @@ function setTempMode(mode) {
  */
 function setPPGMode(mode) {
     ppgMode = mode;
+    console.log('PPG mode set to:', mode);
     
-    // Update button states
     document.querySelectorAll('.sensor-card:nth-child(2) .btn-sensor-demo').forEach(btn => {
         btn.classList.remove('active');
     });
     event.target.classList.add('active');
     
-    // Update indicator
     const indicator = document.getElementById('ppgModeIndicator');
     
     let bpm;
     switch(mode) {
         case 'auto':
             indicator.textContent = 'Auto Mode (Live Sensor)';
+            ppgBuffer = [];
+            beatIntervals = [];
             break;
         case 'resting':
             indicator.textContent = 'Manual: Resting';
@@ -218,13 +230,11 @@ function setPPGMode(mode) {
 function setAccelMode(mode) {
     accelMode = mode;
     
-    // Update button states
     document.querySelectorAll('.sensor-card:nth-child(3) .btn-sensor-demo').forEach(btn => {
         btn.classList.remove('active');
     });
     event.target.classList.add('active');
     
-    // Update indicator
     const indicator = document.getElementById('accelModeIndicator');
     const movementStatus = document.getElementById('movementStatus');
     
@@ -262,7 +272,6 @@ function updateAccelDisplay(x, y, z, mag) {
     document.getElementById('accelZ').textContent = z.toFixed(3);
     document.getElementById('accelMag').textContent = mag.toFixed(3);
     
-    // Update graph
     accelData.x.push(x);
     accelData.y.push(y);
     accelData.z.push(z);
@@ -280,14 +289,17 @@ function updateAccelDisplay(x, y, z, mag) {
  * Draw PPG waveform graph
  */
 function drawPPGGraph() {
+    if (!ppgCanvas || !ppgCtx) {
+        console.warn('PPG canvas not ready');
+        return;
+    }
+    
     const width = ppgCanvas.width;
     const height = ppgCanvas.height;
     
-    // Clear canvas
     ppgCtx.fillStyle = '#f8f8f8';
     ppgCtx.fillRect(0, 0, width, height);
     
-    // Draw grid
     ppgCtx.strokeStyle = '#e0e0e0';
     ppgCtx.lineWidth = 1;
     for (let i = 0; i < height; i += 20) {
@@ -299,7 +311,6 @@ function drawPPGGraph() {
     
     if (ppgData.length < 2) return;
     
-    // Draw waveform
     ppgCtx.strokeStyle = '#800000';
     ppgCtx.lineWidth = 2;
     ppgCtx.beginPath();
@@ -307,7 +318,6 @@ function drawPPGGraph() {
     const xStep = width / PPG_MAX_POINTS;
     ppgData.forEach((value, index) => {
         const x = index * xStep;
-        // Normalize PPG value (0-1024) to canvas height
         const y = height - ((value / 1024) * height);
         
         if (index === 0) {
@@ -324,14 +334,17 @@ function drawPPGGraph() {
  * Draw accelerometer graph
  */
 function drawAccelGraph() {
+    if (!accelCanvas || !accelCtx) {
+        console.warn('Accel canvas not ready');
+        return;
+    }
+    
     const width = accelCanvas.width;
     const height = accelCanvas.height;
     
-    // Clear canvas
     accelCtx.fillStyle = '#f8f8f8';
     accelCtx.fillRect(0, 0, width, height);
     
-    // Draw grid
     accelCtx.strokeStyle = '#e0e0e0';
     accelCtx.lineWidth = 1;
     for (let i = 0; i < height; i += 30) {
@@ -345,9 +358,9 @@ function drawAccelGraph() {
     
     const xStep = width / ACCEL_MAX_POINTS;
     const centerY = height / 2;
-    const scale = height / 4; // Scale for -2g to +2g range
+    const scale = height / 4;
     
-    // Draw X axis (red)
+    // X axis (red)
     accelCtx.strokeStyle = '#dc3545';
     accelCtx.lineWidth = 2;
     accelCtx.beginPath();
@@ -359,7 +372,7 @@ function drawAccelGraph() {
     });
     accelCtx.stroke();
     
-    // Draw Y axis (green)
+    // Y axis (green)
     accelCtx.strokeStyle = '#28a745';
     accelCtx.beginPath();
     accelData.y.forEach((value, index) => {
@@ -370,7 +383,7 @@ function drawAccelGraph() {
     });
     accelCtx.stroke();
     
-    // Draw Z axis (blue)
+    // Z axis (blue)
     accelCtx.strokeStyle = '#007bff';
     accelCtx.beginPath();
     accelData.z.forEach((value, index) => {
@@ -397,12 +410,10 @@ async function connectBluetooth() {
         server = await device.gatt.connect();
         service = await server.getPrimaryService(SERVICE_UUID);
 
-        // Get all characteristics
         tempCharacteristic = await service.getCharacteristic(TEMP_CHAR_UUID);
         ppgCharacteristic = await service.getCharacteristic(PPG_CHAR_UUID);
         accelCharacteristic = await service.getCharacteristic(ACCEL_CHAR_UUID);
 
-        // Start notifications
         await tempCharacteristic.startNotifications();
         tempCharacteristic.addEventListener('characteristicvaluechanged', handleTemperatureData);
 
@@ -412,7 +423,6 @@ async function connectBluetooth() {
         await accelCharacteristic.startNotifications();
         accelCharacteristic.addEventListener('characteristicvaluechanged', handleAccelData);
 
-        // Update UI
         updateConnectionUI(true);
 
         console.log('Connected successfully!');
@@ -458,8 +468,6 @@ function updateConnectionUI(isConnected) {
  * Handle temperature data from BLE
  */
 function handleTemperatureData(event) {
-    // Temperature auto mode uses simulated data, not live sensor
-    // This function is here for future live sensor integration
     if (tempMode !== 'auto') return;
 }
 
@@ -539,6 +547,7 @@ function handlePPGData(event) {
                     if (bpm >= 40 && bpm <= 200) {
                         document.getElementById('hrValue').textContent = bpm;
                         updateHeartRateStatus(bpm);
+                        console.log('Heart rate detected:', bpm, 'BPM');
                     }
                 }
                 
@@ -574,7 +583,6 @@ function updateHeartRateStatus(estimatedHR) {
  * Handle accelerometer data from BLE
  */
 function handleAccelData(event) {
-    // If in manual accel mode, skip live data
     if (accelMode !== 'auto') return;
     
     const value = event.target.value;
@@ -583,28 +591,23 @@ function handleAccelData(event) {
     const accelZ = value.getFloat32(8, true);
     const accelMag = value.getFloat32(12, true);
 
-    // Update display
     updateAccelDisplay(accelX, accelY, accelZ, accelMag);
-
-    // Detect movement
     detectMovement(accelMag);
 }
 
 /**
- * Detect movement and update activity state (improved responsiveness)
+ * Detect movement and update activity state
  */
 function detectMovement(currentMagnitude) {
     const magnitudeChange = Math.abs(currentMagnitude - previousMagnitude);
     
     movementHistory.push(magnitudeChange);
-    // Reduced history size for faster response
     if (movementHistory.length > 5) {
         movementHistory.shift();
     }
 
     const avgMovement = movementHistory.reduce((a, b) => a + b, 0) / movementHistory.length;
     
-    // Lower threshold for more sensitive detection
     const baseThreshold = 0.10;
     const threshold = isActiveMode ? baseThreshold * 0.6 : baseThreshold;
     
@@ -622,7 +625,6 @@ function detectMovement(currentMagnitude) {
         movementStatus.textContent = 'Subject at Rest';
         movementStatus.className = 'movement-status rest';
         
-        // Faster switch back to rest
         if (autoModeEnabled && isActiveMode && avgMovement < threshold * 0.4) {
             setMode('rest');
         }
@@ -632,7 +634,7 @@ function detectMovement(currentMagnitude) {
 }
 
 /**
- * Set activity mode (rest or active)
+ * Set activity mode
  */
 function setMode(mode) {
     isActiveMode = (mode === 'active');
@@ -664,7 +666,7 @@ function toggleAutoMode() {
 }
 
 /**
- * Update health ranges based on breed, weight, age, size
+ * Update health ranges
  */
 function updateHealthRanges() {
     const breed = document.getElementById('breedSelect').value;
