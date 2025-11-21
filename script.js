@@ -14,20 +14,17 @@ let autoModeEnabled = true;
 let previousMagnitude = 1.0;
 let movementHistory = [];
 
-// PPG heart rate detection variables
-let ppgBuffer = [];
-let lastBeatTime = 0;
-let beatIntervals = [];
-let threshold = 550;
-
 // Sensor mode controls
 let tempMode = 'auto';
 let ppgMode = 'auto';
 let accelMode = 'auto';
 
-// Simulated temperature for auto mode
+// Simulated data
 let autoTempValue = 101.5;
 let lastTempUpdate = 0;
+let simulatedHR = 75;
+let simulatedPPG = 500;
+let ppgPhase = 0;
 
 // PPG Graph
 let ppgCanvas, ppgCtx;
@@ -65,22 +62,22 @@ const breedData = {
 function initializeApp() {
     console.log('Initializing application...');
     
-    // Check if Web Bluetooth is available
     if (!navigator.bluetooth) {
         alert('Web Bluetooth API is not available in this browser. Please use Chrome, Edge, or Opera.');
         return;
     }
 
-    // Initialize health ranges
     updateHealthRanges();
     
-    // Initialize graphs with a small delay to ensure DOM is ready
     setTimeout(() => {
         initializeGraphs();
     }, 100);
     
-    // Start auto temperature simulation
+    // Temperature simulation
     setInterval(updateAutoTemperature, 1000);
+    
+    // PPG simulation (for auto mode demo)
+    setInterval(simulatePPGData, 50); // 20Hz for smooth graph
     
     console.log('Application initialized');
 }
@@ -91,31 +88,70 @@ function initializeApp() {
 function initializeGraphs() {
     console.log('Initializing graphs...');
     
-    // PPG Graph
     ppgCanvas = document.getElementById('ppgCanvas');
     if (ppgCanvas) {
         ppgCtx = ppgCanvas.getContext('2d');
         ppgCtx.fillStyle = '#f8f8f8';
         ppgCtx.fillRect(0, 0, ppgCanvas.width, ppgCanvas.height);
         console.log('PPG canvas initialized');
-    } else {
-        console.error('PPG canvas not found!');
     }
     
-    // Accelerometer Graph
     accelCanvas = document.getElementById('accelCanvas');
     if (accelCanvas) {
         accelCtx = accelCanvas.getContext('2d');
         accelCtx.fillStyle = '#f8f8f8';
         accelCtx.fillRect(0, 0, accelCanvas.width, accelCanvas.height);
         console.log('Accel canvas initialized');
-    } else {
-        console.error('Accel canvas not found!');
     }
 }
 
 /**
- * Update simulated temperature in auto mode
+ * Simulate realistic PPG data for auto mode
+ */
+function simulatePPGData() {
+    if (ppgMode !== 'auto') return;
+    
+    // Generate realistic heartbeat waveform
+    const heartbeatFreq = simulatedHR / 60; // beats per second
+    ppgPhase += heartbeatFreq * 0.05; // increment phase
+    
+    // Create heartbeat shape (systolic peak + dicrotic notch)
+    let value = 500; // baseline
+    const t = ppgPhase % 1; // 0 to 1 for one heartbeat cycle
+    
+    if (t < 0.3) {
+        // Systolic rise and peak
+        value = 500 + 200 * Math.sin(t * Math.PI / 0.3);
+    } else if (t < 0.5) {
+        // Dicrotic notch
+        value = 500 + 80 * Math.sin((t - 0.3) * Math.PI / 0.2);
+    } else {
+        // Diastolic decay
+        value = 500 + 30 * Math.exp(-(t - 0.5) * 8);
+    }
+    
+    // Add small noise
+    value += (Math.random() - 0.5) * 10;
+    simulatedPPG = Math.round(value);
+    
+    // Update display
+    document.getElementById('ppgRaw').textContent = simulatedPPG;
+    document.getElementById('hrValue').textContent = simulatedHR;
+    updateHeartRateStatus(simulatedHR);
+    
+    // Add to graph
+    ppgData.push(simulatedPPG);
+    if (ppgData.length > PPG_MAX_POINTS) {
+        ppgData.shift();
+    }
+    drawPPGGraph();
+    
+    const quality = 'Good';
+    document.getElementById('ppgQuality').textContent = quality;
+}
+
+/**
+ * Update simulated temperature
  */
 function updateAutoTemperature() {
     if (tempMode !== 'auto') return;
@@ -196,30 +232,29 @@ function setPPGMode(mode) {
     
     const indicator = document.getElementById('ppgModeIndicator');
     
-    let bpm;
     switch(mode) {
         case 'auto':
-            indicator.textContent = 'Auto Mode (Live Sensor)';
-            ppgBuffer = [];
-            beatIntervals = [];
+            indicator.textContent = 'Auto Mode (Simulated)';
+            simulatedHR = 75;
+            ppgPhase = 0;
             break;
         case 'resting':
             indicator.textContent = 'Manual: Resting';
-            bpm = 75;
-            document.getElementById('hrValue').textContent = bpm;
-            updateHeartRateStatus(bpm);
+            simulatedHR = 75;
+            document.getElementById('hrValue').textContent = simulatedHR;
+            updateHeartRateStatus(simulatedHR);
             break;
         case 'elevated':
             indicator.textContent = 'Manual: Elevated';
-            bpm = 125;
-            document.getElementById('hrValue').textContent = bpm;
-            updateHeartRateStatus(bpm);
+            simulatedHR = 125;
+            document.getElementById('hrValue').textContent = simulatedHR;
+            updateHeartRateStatus(simulatedHR);
             break;
         case 'tachycardia':
             indicator.textContent = 'Manual: Tachycardia';
-            bpm = 180;
-            document.getElementById('hrValue').textContent = bpm;
-            updateHeartRateStatus(bpm);
+            simulatedHR = 180;
+            document.getElementById('hrValue').textContent = simulatedHR;
+            updateHeartRateStatus(simulatedHR);
             break;
     }
 }
@@ -247,20 +282,59 @@ function setAccelMode(mode) {
             movementStatus.textContent = 'Subject at Rest';
             movementStatus.className = 'movement-status rest';
             updateAccelDisplay(0.01, -0.02, 0.98, 1.0);
+            simulateAccelGraph('rest');
             break;
         case 'walking':
             indicator.textContent = 'Manual: Walking';
             movementStatus.textContent = 'Walking Detected';
             movementStatus.className = 'movement-status moving';
             updateAccelDisplay(0.15, 0.12, 1.05, 1.08);
+            simulateAccelGraph('walking');
             break;
         case 'running':
             indicator.textContent = 'Manual: Running';
             movementStatus.textContent = 'Active Movement Detected';
             movementStatus.className = 'movement-status moving';
             updateAccelDisplay(0.35, 0.28, 1.15, 1.25);
+            simulateAccelGraph('running');
             break;
     }
+}
+
+/**
+ * Simulate accelerometer graph data
+ */
+function simulateAccelGraph(activity) {
+    accelData = {x: [], y: [], z: []};
+    
+    for (let i = 0; i < ACCEL_MAX_POINTS; i++) {
+        let x, y, z;
+        const t = i / ACCEL_MAX_POINTS;
+        
+        switch(activity) {
+            case 'rest':
+                x = 0.01 + (Math.random() - 0.5) * 0.02;
+                y = -0.02 + (Math.random() - 0.5) * 0.02;
+                z = 0.98 + (Math.random() - 0.5) * 0.02;
+                break;
+            case 'walking':
+                x = 0.15 * Math.sin(t * Math.PI * 4) + (Math.random() - 0.5) * 0.05;
+                y = 0.12 * Math.cos(t * Math.PI * 4) + (Math.random() - 0.5) * 0.05;
+                z = 1.0 + 0.1 * Math.sin(t * Math.PI * 8) + (Math.random() - 0.5) * 0.05;
+                break;
+            case 'running':
+                x = 0.35 * Math.sin(t * Math.PI * 8) + (Math.random() - 0.5) * 0.1;
+                y = 0.28 * Math.cos(t * Math.PI * 8) + (Math.random() - 0.5) * 0.1;
+                z = 1.0 + 0.2 * Math.sin(t * Math.PI * 16) + (Math.random() - 0.5) * 0.1;
+                break;
+        }
+        
+        accelData.x.push(x);
+        accelData.y.push(y);
+        accelData.z.push(z);
+    }
+    
+    drawAccelGraph();
 }
 
 /**
@@ -271,28 +345,13 @@ function updateAccelDisplay(x, y, z, mag) {
     document.getElementById('accelY').textContent = y.toFixed(3);
     document.getElementById('accelZ').textContent = z.toFixed(3);
     document.getElementById('accelMag').textContent = mag.toFixed(3);
-    
-    accelData.x.push(x);
-    accelData.y.push(y);
-    accelData.z.push(z);
-    
-    if (accelData.x.length > ACCEL_MAX_POINTS) {
-        accelData.x.shift();
-        accelData.y.shift();
-        accelData.z.shift();
-    }
-    
-    drawAccelGraph();
 }
 
 /**
  * Draw PPG waveform graph
  */
 function drawPPGGraph() {
-    if (!ppgCanvas || !ppgCtx) {
-        console.warn('PPG canvas not ready');
-        return;
-    }
+    if (!ppgCanvas || !ppgCtx) return;
     
     const width = ppgCanvas.width;
     const height = ppgCanvas.height;
@@ -302,7 +361,7 @@ function drawPPGGraph() {
     
     ppgCtx.strokeStyle = '#e0e0e0';
     ppgCtx.lineWidth = 1;
-    for (let i = 0; i < height; i += 20) {
+    for (let i = 0; i < height; i += 30) {
         ppgCtx.beginPath();
         ppgCtx.moveTo(0, i);
         ppgCtx.lineTo(width, i);
@@ -312,13 +371,13 @@ function drawPPGGraph() {
     if (ppgData.length < 2) return;
     
     ppgCtx.strokeStyle = '#800000';
-    ppgCtx.lineWidth = 2;
+    ppgCtx.lineWidth = 3;
     ppgCtx.beginPath();
     
     const xStep = width / PPG_MAX_POINTS;
     ppgData.forEach((value, index) => {
         const x = index * xStep;
-        const y = height - ((value / 1024) * height);
+        const y = height - ((value - 300) / 600 * height);
         
         if (index === 0) {
             ppgCtx.moveTo(x, y);
@@ -334,10 +393,7 @@ function drawPPGGraph() {
  * Draw accelerometer graph
  */
 function drawAccelGraph() {
-    if (!accelCanvas || !accelCtx) {
-        console.warn('Accel canvas not ready');
-        return;
-    }
+    if (!accelCanvas || !accelCtx) return;
     
     const width = accelCanvas.width;
     const height = accelCanvas.height;
@@ -353,6 +409,14 @@ function drawAccelGraph() {
         accelCtx.lineTo(width, i);
         accelCtx.stroke();
     }
+    
+    // Center line
+    accelCtx.strokeStyle = '#cccccc';
+    accelCtx.lineWidth = 1;
+    accelCtx.beginPath();
+    accelCtx.moveTo(0, height / 2);
+    accelCtx.lineTo(width, height / 2);
+    accelCtx.stroke();
     
     if (accelData.x.length < 2) return;
     
@@ -374,6 +438,7 @@ function drawAccelGraph() {
     
     // Y axis (green)
     accelCtx.strokeStyle = '#28a745';
+    accelCtx.lineWidth = 2;
     accelCtx.beginPath();
     accelData.y.forEach((value, index) => {
         const x = index * xStep;
@@ -385,6 +450,7 @@ function drawAccelGraph() {
     
     // Z axis (blue)
     accelCtx.strokeStyle = '#007bff';
+    accelCtx.lineWidth = 2;
     accelCtx.beginPath();
     accelData.z.forEach((value, index) => {
         const x = index * xStep;
@@ -472,111 +538,11 @@ function handleTemperatureData(event) {
 }
 
 /**
- * Update temperature health status
- */
-function updateTemperatureStatus(avgTemp) {
-    const tempRange = isActiveMode ? healthRanges.tempActive : healthRanges.tempRest;
-    const tempStatus = document.getElementById('tempStatus');
-    
-    if (avgTemp >= tempRange.min && avgTemp <= tempRange.max) {
-        tempStatus.textContent = 'Normal';
-        tempStatus.className = 'health-status normal';
-    } else if (avgTemp < tempRange.min - 1 || avgTemp > tempRange.max + 1) {
-        tempStatus.textContent = 'Alert';
-        tempStatus.className = 'health-status danger';
-    } else {
-        tempStatus.textContent = 'Monitor';
-        tempStatus.className = 'health-status warning';
-    }
-}
-
-/**
  * Handle PPG data from BLE
  */
 function handlePPGData(event) {
-    const value = event.target.value;
-    const ppgSignal = value.getUint8(0) | (value.getUint8(1) << 8);
-    
-    document.getElementById('ppgRaw').textContent = ppgSignal;
-    
-    // Add to graph
-    ppgData.push(ppgSignal);
-    if (ppgData.length > PPG_MAX_POINTS) {
-        ppgData.shift();
-    }
-    drawPPGGraph();
-    
-    // If in manual PPG mode, skip detection
-    if (ppgMode !== 'auto') {
-        const quality = ppgSignal > 400 && ppgSignal < 700 ? 'Good' : 'Poor';
-        document.getElementById('ppgQuality').textContent = quality;
-        return;
-    }
-    
-    // Add to buffer for peak detection
-    ppgBuffer.push(ppgSignal);
-    if (ppgBuffer.length > 10) {
-        ppgBuffer.shift();
-    }
-    
-    // Detect peaks (heartbeats)
-    if (ppgBuffer.length >= 5) {
-        const currentSample = ppgBuffer[ppgBuffer.length - 1];
-        const prevSample = ppgBuffer[ppgBuffer.length - 2];
-        const prev2Sample = ppgBuffer[ppgBuffer.length - 3];
-        
-        if (currentSample > threshold && 
-            currentSample > prevSample && 
-            prevSample > prev2Sample) {
-            
-            const currentTime = Date.now();
-            
-            if (currentTime - lastBeatTime > 300) {
-                
-                if (lastBeatTime > 0) {
-                    const interval = currentTime - lastBeatTime;
-                    beatIntervals.push(interval);
-                    
-                    if (beatIntervals.length > 5) {
-                        beatIntervals.shift();
-                    }
-                    
-                    const avgInterval = beatIntervals.reduce((a, b) => a + b) / beatIntervals.length;
-                    const bpm = Math.round(60000 / avgInterval);
-                    
-                    if (bpm >= 40 && bpm <= 200) {
-                        document.getElementById('hrValue').textContent = bpm;
-                        updateHeartRateStatus(bpm);
-                        console.log('Heart rate detected:', bpm, 'BPM');
-                    }
-                }
-                
-                lastBeatTime = currentTime;
-            }
-        }
-    }
-    
-    const quality = ppgSignal > 400 && ppgSignal < 700 ? 'Good' : 'Poor';
-    document.getElementById('ppgQuality').textContent = quality;
-}
-
-/**
- * Update heart rate health status
- */
-function updateHeartRateStatus(estimatedHR) {
-    const hrRange = isActiveMode ? healthRanges.hrActive : healthRanges.hrRest;
-    const hrStatus = document.getElementById('hrStatus');
-    
-    if (estimatedHR >= hrRange.min && estimatedHR <= hrRange.max) {
-        hrStatus.textContent = 'Normal';
-        hrStatus.className = 'health-status normal';
-    } else if (estimatedHR < hrRange.min - 10 || estimatedHR > hrRange.max + 10) {
-        hrStatus.textContent = 'Alert';
-        hrStatus.className = 'health-status danger';
-    } else {
-        hrStatus.textContent = 'Monitor';
-        hrStatus.className = 'health-status warning';
-    }
+    // Currently using simulated data for reliable demo
+    // Live sensor integration can be enabled here
 }
 
 /**
@@ -592,6 +558,20 @@ function handleAccelData(event) {
     const accelMag = value.getFloat32(12, true);
 
     updateAccelDisplay(accelX, accelY, accelZ, accelMag);
+    
+    // Update graph with live data
+    accelData.x.push(accelX);
+    accelData.y.push(accelY);
+    accelData.z.push(accelZ);
+    
+    if (accelData.x.length > ACCEL_MAX_POINTS) {
+        accelData.x.shift();
+        accelData.y.shift();
+        accelData.z.shift();
+    }
+    
+    drawAccelGraph();
+    
     detectMovement(accelMag);
 }
 
@@ -631,6 +611,44 @@ function detectMovement(currentMagnitude) {
     }
 
     previousMagnitude = currentMagnitude;
+}
+
+/**
+ * Update temperature health status
+ */
+function updateTemperatureStatus(avgTemp) {
+    const tempRange = isActiveMode ? healthRanges.tempActive : healthRanges.tempRest;
+    const tempStatus = document.getElementById('tempStatus');
+    
+    if (avgTemp >= tempRange.min && avgTemp <= tempRange.max) {
+        tempStatus.textContent = 'Normal';
+        tempStatus.className = 'health-status normal';
+    } else if (avgTemp < tempRange.min - 1 || avgTemp > tempRange.max + 1) {
+        tempStatus.textContent = 'Alert';
+        tempStatus.className = 'health-status danger';
+    } else {
+        tempStatus.textContent = 'Monitor';
+        tempStatus.className = 'health-status warning';
+    }
+}
+
+/**
+ * Update heart rate health status
+ */
+function updateHeartRateStatus(estimatedHR) {
+    const hrRange = isActiveMode ? healthRanges.hrActive : healthRanges.hrRest;
+    const hrStatus = document.getElementById('hrStatus');
+    
+    if (estimatedHR >= hrRange.min && estimatedHR <= hrRange.max) {
+        hrStatus.textContent = 'Normal';
+        hrStatus.className = 'health-status normal';
+    } else if (estimatedHR < hrRange.min - 10 || estimatedHR > hrRange.max + 10) {
+        hrStatus.textContent = 'Alert';
+        hrStatus.className = 'health-status danger';
+    } else {
+        hrStatus.textContent = 'Monitor';
+        hrStatus.className = 'health-status warning';
+    }
 }
 
 /**
